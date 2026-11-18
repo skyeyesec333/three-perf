@@ -1,0 +1,15 @@
+{
+  "name": "three-perf",
+  "description": "Measure and speed up three.js scenes without lowering picture quality.",
+  "owner": { "name": "skyeyesec333" },
+  "plugins": [
+    {
+      "name": "three-perf",
+      "source": "./",
+      "description": "Skill: three-perf. GPU-synced frame timing, cold shader warm-up, before/after picture comparison, and modules to join still meshes, upsample half-size effects and pre-compile post-processing.",
+      "category": "development",
+      "tags": ["threejs", "webgl", "performance", "r3f"],
+      "version": "0.1.0"
+    }
+  ]
+}

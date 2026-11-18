@@ -1,0 +1,11 @@
+{
+  "name": "three-perf",
+  "displayName": "Three Perf",
+  "version": "0.1.0",
+  "description": "Measure and speed up a three.js or React Three Fiber scene without lowering picture quality: GPU-synced frame times, cold-shader warm-up timing, before/after picture comparison, and drop-in modules for joining still meshes, half-size effects and composer pre-compiling.",
+  "author": { "name": "skyeyesec333" },
+  "license": "MIT",
+  "repository": "https://github.com/skyeyesec333/three-perf",
+  "homepage": "https://github.com/skyeyesec333/three-perf",
+  "keywords": ["threejs", "react-three-fiber", "webgl", "performance", "shaders", "postprocessing", "playwright"]
+}
