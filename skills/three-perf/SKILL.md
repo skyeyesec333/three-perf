@@ -18,7 +18,7 @@ description: Measure and speed up a three.js or React Three Fiber scene without 
 
 Scripts are in this skill's own folder: set `S="${CLAUDE_SKILL_DIR}/scripts"` once per shell (the same for a plugin install and a copied one). Page modules are in `${CLAUDE_SKILL_DIR}/src`: copy the ones you need into the app.
 
-They need Node 18+ and Playwright (`npm i -D playwright-core` in the project, or `PLAYWRIGHT=<path to its index.mjs>`; the path actually loaded is printed). Chromium runs uncapped; `--engine webkit` uses Playwright's WebKit (`npx playwright install webkit`).
+They need Node 18+ and Playwright (`npm i -D playwright-core` in the project, or `PLAYWRIGHT=<path to its index.mjs>`; the path actually loaded is printed). Chromium runs uncapped; `--engine webkit` uses Playwright's WebKit (`npx playwright install webkit`), which is close to Safari but not Safari: confirm findings in real Safari. Any http(s) address works, not only localhost; the page is loaded like any visit. A `PLAYWRIGHT=` path that fails to load stops the script rather than falling back to another copy.
 
 ## 1. The page hook
 
@@ -34,7 +34,7 @@ Without it, only coarse frame pacing can be measured. Copy `src/perfHook.js` (pl
 node "$S/frametime.mjs" --runs 3 http://localhost:5173/                 # ms per view, median and p90
 node "$S/warmup.mjs" --runs 3 http://localhost:5173/                    # ready time, programs compiled late
 node "$S/warmup.mjs" --cold --runs 3 http://localhost:5173/             # a first visit: no driver cache helps
-node "$S/warmup.mjs" --engine webkit http://localhost:5173/             # Safari's first-frame freezes
+node "$S/warmup.mjs" --engine webkit http://localhost:5173/             # first-frame freezes in Playwright's WebKit (close to Safari, not Safari)
 ```
 
 Read [references/measuring.md](references/measuring.md) before trusting a number: why readPixels sync, why fixed views, why `--cold` exists (the GPU driver's own shader cache survives a fresh browser profile), noise levels.
@@ -67,7 +67,7 @@ Numbers with conditions (machine, browser, size, DPR, views, runs, cold or warm)
 
 ## Hygiene
 
-Headless runs: one profile per port, never shared by two runs at once; HTTP cache off; throwaway profiles are deleted at the end of each run (a killed run can leave `three-perf-*` in the system temp folder: ask before removing anything you did not create). Close other GPU-heavy apps while timing.
+Headless runs: one profile per port, never shared by two runs at once (`--profile` takes only an empty folder or one this tool made); HTTP cache off on Chromium (WebKit: leave `--profile` out); throwaway profiles are deleted at the end of each run, also on Ctrl-C, kill or a closed terminal (a hard crash can leave `three-perf-*` in the system temp folder: ask before removing anything you did not create). `compare.mjs` will not overwrite an earlier comparison without `--force`. Close other GPU-heavy apps while timing.
 
 ## Files
 

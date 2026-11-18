@@ -9,12 +9,14 @@
    Things that move only now and then (a bird that hops every minute) must carry userData.live, or they may be
    frozen into a batch while they happened to be still. */
 import { useFrame, useThree } from "@react-three/fiber";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { batchStill } from "./joinStill.js";
 
 export default function Still({ children, ready = true, watch = 2, disabled = false, onDone }) {
   const g = useRef(), gl = useThree((s) => s.gl);
-  const st = useRef({ at: new Map(), moved: new Set(), after: 0, done: disabled });
+  const st = useRef({ at: new Map(), moved: new Set(), after: 0, done: disabled, undo: null });
+  /* On unmount: free the merged geometry and show the originals again (R3F disposes what it made, not what we made). */
+  useEffect(() => () => { st.current.undo?.(); st.current.undo = null; }, []);
   useFrame((_, dt) => {
     const s = st.current, root = g.current; if (s.done || !root) return;
     root.updateMatrixWorld();
@@ -27,7 +29,8 @@ export default function Still({ children, ready = true, watch = 2, disabled = fa
     if (!ready) return;
     s.after += dt; if (s.after < watch) return;
     s.done = true;
-    const r = batchStill(root, gl, s.moved);
+    const { undo, ...r } = batchStill(root, gl, s.moved);
+    s.undo = undo;
     s.at.clear();
     onDone?.({ ...r, moved: s.moved.size });
   });

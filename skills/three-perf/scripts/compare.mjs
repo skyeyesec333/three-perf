@@ -10,7 +10,10 @@
 // you can see; a difference is a reason to look, not a pass or fail by itself (animated noise, rain, time).
 //
 // Options: --views a,b  --size WxH (1600x900)  --dpr N (1)  --engine E  --ready NAME (__threePerf)  --timeout S (90)
-//          --settle S (2: seconds after ready before the shot)  --tol N (8)  --out DIR (perf-out/compare)
+//          --settle S (2: seconds after ready before the shot)  --tol N (8)
+//          --out DIR (perf-out/compare, relative to where you run it)  --force (replace pictures already there)
+//
+// It refuses to overwrite pictures from an earlier comparison unless --force is given. Any http(s) address works.
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs, checkGlobalName, checkUrl, parseSize, loadPlaywright, launch, die } from "./lib/common.mjs";
@@ -19,14 +22,24 @@ const { opts, rest } = parseArgs(process.argv.slice(2), {
   views: { type: "list" }, size: { type: "str", def: "1600x900" }, dpr: { type: "num", min: 0.5, max: 4, def: 1 },
   engine: { type: "str", def: "chromium" }, ready: { type: "str", def: "__threePerf" }, timeout: { type: "int", min: 5, max: 900, def: 90 },
   settle: { type: "int", min: 0, max: 60, def: 2 }, tol: { type: "int", min: 0, max: 255, def: 8 }, out: { type: "str", def: "perf-out/compare" },
-  headed: { type: "bool" },
+  headed: { type: "bool" }, force: { type: "bool" },
 });
 if (opts.help || rest.length !== 2) { console.log("usage: node compare.mjs [options] <url-before> <url-after>"); process.exit(opts.help ? 0 : 2); }
 const urls = rest.map(checkUrl), size = parseSize(opts.size), out = path.resolve(opts.out);
-fs.mkdirSync(out, { recursive: true });
 checkGlobalName(opts.ready);
+if (fs.existsSync(out) && !opts.force && fs.readdirSync(out).some((f) => /-(before|after|pair|crop)\.png$/.test(f)))
+  die(`${out} already holds a comparison: pick another --out, or pass --force to replace it`);
+fs.mkdirSync(out, { recursive: true });
 const pw = await loadPlaywright();
 const safe = (s) => String(s).replace(/[^\w.-]+/g, "_").slice(0, 60) || "view";
+/* File names per view: two views whose names clean up to the same string get -2, -3... instead of overwriting. */
+const fileNames = new Map(), usedNames = new Set();
+const fileFor = (view) => {
+  if (fileNames.has(view)) return fileNames.get(view);
+  let base = safe(view), name = base, k = 2;
+  while (usedNames.has(name)) name = `${base}-${k++}`;
+  usedNames.add(name); fileNames.set(view, name); return name;
+};
 
 async function shots(u) {
   const b = await launch(pw, { engine: opts.engine, size, dpr: opts.dpr, headed: opts.headed });
@@ -53,7 +66,7 @@ const b = await launch(pw, { engine: "chromium", size: { width: 800, height: 600
 try {
   for (const view of Object.keys(before)) {
     if (!after[view]) continue;
-    const s = safe(view);
+    const s = fileFor(view);
     fs.writeFileSync(path.join(out, `${s}-before.png`), before[view]);
     fs.writeFileSync(path.join(out, `${s}-after.png`), after[view]);
     const r = await b.page.evaluate(async ({ a, z, tol }) => {

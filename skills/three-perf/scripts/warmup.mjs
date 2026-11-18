@@ -14,12 +14,16 @@
 //   --ready NAME   global that means "ready" (__threePerf)  --after S     seconds to watch after ready (5)
 //   --engine E     chromium | webkit                        --size WxH    viewport (1600x900)
 //   --timeout S    seconds to wait for ready (120)          --json FILE   write the results
-//   --no-baseline  skip the bare-WebGL run that tells the browser's own stalls from the page's
+//   --headed       show the browser                        --no-baseline skip the bare-WebGL run that tells the
+//                                                          browser's own stalls from the page's
+//
+// --engine webkit is Playwright's WebKit build, close to Safari's engine but not Safari itself: confirm a finding in
+// real Safari before calling it fixed.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import crypto from "node:crypto";
-import { parseArgs, checkGlobalName, checkUrl, parseSize, loadPlaywright, launch, waitReady, median, fmt, writeJson } from "./lib/common.mjs";
+import { parseArgs, checkGlobalName, checkUrl, parseSize, loadPlaywright, launch, waitReady, median, fmt, writeJson, die } from "./lib/common.mjs";
 
 const { opts, rest } = parseArgs(process.argv.slice(2), {
   cold: { type: "bool" }, runs: { type: "int", min: 1, max: 20, def: 3 }, ready: { type: "str", def: "__threePerf" },
@@ -28,8 +32,10 @@ const { opts, rest } = parseArgs(process.argv.slice(2), {
 });
 if (opts.help || rest.length !== 1) { console.log("usage: node warmup.mjs [--cold] [options] <url>   (see the header of this file)"); process.exit(opts.help ? 0 : 2); }
 const url = checkUrl(rest[0]), size = parseSize(opts.size);
-const probeSrc = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "lib", "probe.js"), "utf8");
+const probeTpl = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "lib", "probe.js"), "utf8");
 checkGlobalName(opts.ready);
+/* Both values are checked before they reach the page: a whole number and a plain global name (JSON-quoted). */
+const probeSrc = (seed) => probeTpl.replace("__TP_SEED__", () => String(seed)).replace("__TP_READY__", () => JSON.stringify(opts.ready));   // functions: a "$" in the name is not a replacement pattern
 const pw = await loadPlaywright();
 
 /* The browser's own stalls: headless Chromium shows a long frame about a second in on ANY WebGL page (a bare page
@@ -40,7 +46,7 @@ let baseline = [];
 if (!opts["no-baseline"]) {
   const b = await launch(pw, { engine: opts.engine, size, profile: null, headed: opts.headed });
   try {
-    await b.page.addInitScript(probeSrc.replace("__TP_SEED__", "0"));
+    await b.page.addInitScript(probeSrc(0));
     await b.page.goto(BARE, { waitUntil: "load", timeout: 30000 });
     await b.page.waitForTimeout((opts.after + 2) * 1000);
     baseline = (await b.page.evaluate(() => window.__tpProbe.long)) || [];
@@ -55,14 +61,21 @@ for (let r = 1; r <= opts.runs; r++) {
   const seed = opts.cold ? crypto.randomInt(1, 2 ** 31 - 1) : 0;   // a whole number only ever reaches the page
   const b = await launch(pw, { engine: opts.engine, size, profile: null, headed: opts.headed });
   try {
-    await b.page.addInitScript(probeSrc.replace("__TP_SEED__", String(seed)));
+    await b.page.addInitScript(probeSrc(seed));
     const t0 = Date.now();
     await b.page.goto(url, { waitUntil: "commit", timeout: opts.timeout * 1000 });
     await waitReady(b.page, opts.ready, opts.timeout * 1000);
-    const readyAt = await b.page.evaluate(() => (window.__tpProbe.readyAt = performance.now()));
     await b.page.waitForTimeout(opts.after * 1000);
     const p = await b.page.evaluate(() => window.__tpProbe);
-    const late = p.links.filter((t) => t > readyAt), longAfter = p.long.filter((f) => f.at >= readyAt);
+    const broken = await b.page.evaluate(() => window.__tpProbe.failed());
+    if (broken.count) {
+      if (seed) die(`the --cold rewrite broke ${broken.count} shader program(s), so this run measures nothing real: ${broken.first}`, 1);
+      console.log(`warn: ${broken.count} of the page's own shader program(s) failed to link (not caused by this tool): ${broken.first}`);
+    }
+    const readyAt = p.readyAt;   // recorded inside the page the moment it said ready
+    if (readyAt === null) die("the page's ready global was seen from outside but never by the probe: report this", 1);
+    // A frame counts as after ready if it ended after ready: the frame that runs right after ready is the one at risk.
+    const late = p.links.filter((t) => t >= readyAt), longAfter = p.long.filter((f) => f.at + f.ms > readyAt);
     const own = longAfter.filter((f) => !isBrowser(f));
     const row = { run: r, cold: !!seed, readyMs: Math.round(readyAt), wallMs: Date.now() - t0, programsBefore: p.links.length - late.length,
       programsAfter: late.length, longFramesAfter: own.length, worstFrameAfter: own.reduce((m, f) => Math.max(m, f.ms), 0),

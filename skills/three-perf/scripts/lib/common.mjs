@@ -10,7 +10,7 @@ export const die = (msg, code = 2) => { console.error(`three-perf: ${msg}`); pro
 /* Throwaway profiles this process created: removed on any exit, including die() part-way through a run. */
 const made = new Set();
 process.on("exit", () => { for (const d of made) { try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } } });
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(130));
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => process.exit(130));   // a closed terminal too
 
 export function checkGlobalName(name, flag = "--ready") {
   if (!/^[A-Za-z_$][\w$]*$/.test(name || "")) die(`${flag} must be a plain global name, got "${name}"`);
@@ -59,8 +59,12 @@ export function parseSize(s) {
 /* Playwright: PLAYWRIGHT=<file> first, then a copy installed beside this skill, then the project it is run from.
    The file actually loaded is printed, so an unexpected copy is visible. */
 export async function loadPlaywright() {
+  if (process.env.PLAYWRIGHT) {   // named on purpose: use it or stop, never quietly take another copy
+    const f = path.resolve(process.env.PLAYWRIGHT);
+    try { const pw = await import(pathToFileURL(f).href); console.error(`playwright: ${f}`); return pw; }
+    catch (e) { die(`PLAYWRIGHT=${f} could not be loaded (${e.code || e.message}). Fix the path or unset it.`); }
+  }
   const tries = [];
-  if (process.env.PLAYWRIGHT) tries.push(path.resolve(process.env.PLAYWRIGHT));
   for (const req of [createRequire(import.meta.url), createRequire(path.join(process.cwd(), "noop.js"))])
     for (const m of ["playwright-core", "playwright"]) { try { tries.push(req.resolve(m)); } catch { /* not here */ } }
   for (const f of tries) {
@@ -81,9 +85,10 @@ const CHROME = [
 export async function launch(pw, { engine = "chromium", size, dpr = 1, profile, headed = false, uncapped = true }) {
   if (!["chromium", "webkit"].includes(engine)) die(`--engine must be chromium or webkit`);
   const viewport = size || { width: 1600, height: 900 };
-  const dir = profile ? path.resolve(profile) : fs.mkdtempSync(path.join(os.tmpdir(), "three-perf-"));
+  const dir = profile ? usableProfile(profile) : fs.mkdtempSync(path.join(os.tmpdir(), "three-perf-"));
   const temp = !profile;
   if (temp) made.add(dir);
+  if (engine === "webkit" && profile) console.error("note: WebKit's HTTP cache cannot be turned off from here; a reused --profile keeps it. Leave --profile out for WebKit runs.");
   let ctx;
   if (engine === "webkit") {
     ctx = await pw.webkit.launchPersistentContext(dir, { headless: !headed, viewport, deviceScaleFactor: dpr });
@@ -97,13 +102,32 @@ export async function launch(pw, { engine = "chromium", size, dpr = 1, profile, 
     });
   }
   const page = ctx.pages()[0] || await ctx.newPage();
-  // Caches off: a repeat run must not be faster only because the files came from disk.
+  // Caches off (Chromium; WebKit gets a fresh, empty profile each run instead): a repeat run must not be faster only
+  // because the files came from disk.
   try { const cdp = engine === "chromium" ? await ctx.newCDPSession(page) : null; if (cdp) await cdp.send("Network.setCacheDisabled", { cacheDisabled: true }); } catch { /* best effort */ }
   const close = async () => {
     await ctx.close().catch(() => {});
     if (temp) { fs.rmSync(dir, { recursive: true, force: true }); made.delete(dir); }   // only the profile this run created
   };
   return { ctx, page, close };
+}
+
+/* --profile: an empty folder, or one this tool made before (it carries MARK). Anything else is refused, above all a
+   real browser profile (it has "Local State" or "Preferences"): running there would change someone's own browser. */
+const MARK = ".three-perf-profile";
+function usableProfile(p) {
+  const dir = path.resolve(p);
+  if (fs.existsSync(dir)) {
+    if (!fs.statSync(dir).isDirectory()) die(`--profile ${dir} is not a folder`);
+    const items = fs.readdirSync(dir);
+    if (items.length && !items.includes(MARK)) {
+      const real = items.some((f) => ["Local State", "Preferences", "Default", "Cookies"].includes(f));
+      die(`--profile ${dir} ${real ? "looks like a real browser profile" : "is not empty and was not made by this tool"}: use an empty folder (one per port)`);
+    }
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, MARK), "made by three-perf: a throwaway measuring profile\n");
+  return dir;
 }
 
 /* Wait until the page says it is ready: window[name] truthy (default "__threePerf"), or fail after the timeout. */

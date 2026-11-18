@@ -11,7 +11,7 @@ It came out of tuning a heavy hand-built WebGL portfolio scene (a lit interior, 
 ## What the skill does
 
 1. **Measures frame cost properly** (`frametime.mjs`): each frame of each named camera view is followed by a GPU sync, in an uncapped browser, over several loads. Median and p90 per view.
-2. **Measures the warm-up** (`warmup.mjs`): time to ready, shader programs compiled *after* ready (a visible freeze, worst in Safari), long frames. `--cold` rewrites every shader so the GPU driver's own cache cannot help: a true first visit. `--engine webkit` for Safari's behaviour.
+2. **Measures the warm-up** (`warmup.mjs`): time to ready, shader programs compiled *after* ready (a visible freeze, worst in Safari), long frames, timed from inside the page. `--cold` rewrites every shader so the GPU driver's own cache cannot help: a true first visit. `--engine webkit` runs Playwright's WebKit, close to Safari's behaviour (confirm in real Safari).
 3. **Proves nothing changed on screen** (`compare.mjs`): the same views before and after, side by side, 1:1 crops and a pixel difference.
 4. **Gives you the fixes as drop-in modules** (`src/`): `joinStill` / `batchStill` / `<Still>` (fewer draw calls for things that never move), a depth-aware upsample for half-size screen effects, `compileComposer` (post-processing compiled during the warm-up, not in the first frame), and the page hook the scripts use.
 5. **Keeps to one rule:** no visible quality is traded for speed without your yes. No automatic resolution scaling.
@@ -58,6 +58,7 @@ For exact GPU numbers install the page hook (`src/perfHook.js`, or `src/PerfHook
 
 - [Claude Code](https://claude.com/claude-code)
 - Node.js 18+ and Playwright (`playwright-core`), with Google Chrome installed (or Playwright's Chromium); Playwright's WebKit for `--engine webkit`
+- Any http(s) page can be measured, not only localhost: the scripts load it as a visitor would
 - three.js r150+ for the `src/` modules; `@react-three/fiber` for the `.jsx` ones
 
 ## Licence
