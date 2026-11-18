@@ -16,7 +16,7 @@ description: Measure and speed up a three.js or React Three Fiber scene without 
 
 **The rule that outranks the rest:** never trade visible quality for speed without the owner's explicit yes. No automatic resolution scaling, no lower pixel ratio, no fewer particles, no blurrier shadows, unless they agreed to that specific trade after seeing it. Make the frame cheaper instead.
 
-Scripts are in this skill's own folder. Set once per shell: `S="${CLAUDE_PLUGIN_ROOT:-<this skill's base directory>}/skills/three-perf/scripts"` when installed as a plugin, or `S=<this skill's base directory>/scripts` for a plain skill. Page modules are in its `src/` folder: copy the ones you need into the app.
+Scripts are in this skill's own folder: set `S="${CLAUDE_SKILL_DIR}/scripts"` once per shell (the same for a plugin install and a copied one). Page modules are in `${CLAUDE_SKILL_DIR}/src`: copy the ones you need into the app.
 
 They need Node 18+ and Playwright (`npm i -D playwright-core` in the project, or `PLAYWRIGHT=<path to its index.mjs>`; the path actually loaded is printed). Chromium runs uncapped; `--engine webkit` uses Playwright's WebKit (`npx playwright install webkit`).
 
